@@ -26,7 +26,7 @@ setup(
     long_description_content_type="text/markdown",
     author="David Dabert",
     author_email="d.dabert89@gmail.com",
-    url="https://github.com/your-org/llm-cost-monitor",
+    url="https://github.com/david-dabert/llm-cost-monitor",
     license="MIT",
     packages=find_packages(where="src"),
     package_dir={"": "src"},

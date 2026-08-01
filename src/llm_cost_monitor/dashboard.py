@@ -286,19 +286,33 @@ def create_dashboard_app(
         budgets = tracker.list_budgets()
         result = []
         for b in budgets:
-            if b.period == "daily":
-                spend = tracker.get_daily_cost(b.project)
-            elif b.period == "weekly":
-                spend = tracker.get_weekly_cost(b.project)
-            else:
-                spend = tracker.get_monthly_cost(b.project)
-            result.append({
-                "name": b.name,
-                "amount": b.amount,
-                "period": b.period,
-                "project": b.project,
-                "current_spend": round(spend, 6),
-            })
+            daily = tracker.get_daily_cost(b.project)
+            weekly = tracker.get_weekly_cost(b.project)
+            monthly = tracker.get_monthly_cost(b.project)
+            if b.daily_limit:
+                result.append({
+                    "name": f"{b.project} (daily)",
+                    "amount": b.daily_limit,
+                    "period": "daily",
+                    "project": b.project,
+                    "current_spend": round(daily, 6),
+                })
+            if b.weekly_limit:
+                result.append({
+                    "name": f"{b.project} (weekly)",
+                    "amount": b.weekly_limit,
+                    "period": "weekly",
+                    "project": b.project,
+                    "current_spend": round(weekly, 6),
+                })
+            if b.monthly_limit:
+                result.append({
+                    "name": f"{b.project} (monthly)",
+                    "amount": b.monthly_limit,
+                    "period": "monthly",
+                    "project": b.project,
+                    "current_spend": round(monthly, 6),
+                })
         return jsonify(result)
 
     @app.route("/api/optimize")

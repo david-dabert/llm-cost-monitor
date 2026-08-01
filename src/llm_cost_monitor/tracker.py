@@ -41,35 +41,54 @@ class UsageRecord:
 
 @dataclass
 class Budget:
-    """Budget configuration for a project or global scope."""
+    """Budget configuration for a project.
 
-    name: str
-    amount: float
-    period: str  # "daily", "weekly", "monthly"
-    project: Optional[str] = None
+    Supports per-period limits (daily, weekly, monthly).
+    """
 
-    def check_against(self, current_spend: float) -> Optional[str]:
-        """Check current spending against budget limit. Returns violation message or None."""
-        if current_spend >= self.amount:
-            scope = f"project '{self.project}'" if self.project else "global"
-            return (
-                f"{self.period.capitalize()} budget '{self.name}' exceeded for {scope}: "
-                f"${current_spend:.2f} >= ${self.amount:.2f}"
+    project: str
+    daily_limit: Optional[float] = None
+    weekly_limit: Optional[float] = None
+    monthly_limit: Optional[float] = None
+
+    def check_against(self, daily: float, weekly: float, monthly: float) -> list[str]:
+        """Check current spending against budget limits. Returns list of violations."""
+        violations = []
+        if self.daily_limit and daily >= self.daily_limit:
+            violations.append(
+                f"Daily budget exceeded: ${daily:.2f} >= ${self.daily_limit:.2f}"
             )
-        return None
-
-    def check_threshold(self, current_spend: float, threshold: float = 0.8) -> Optional[str]:
-        """Check if spending is approaching the limit. Returns warning or None."""
-        if self.amount <= 0:
-            return None
-        if current_spend >= self.amount * threshold:
-            pct = (current_spend / self.amount) * 100
-            scope = f"project '{self.project}'" if self.project else "global"
-            return (
-                f"{self.period.capitalize()} budget '{self.name}' at {pct:.0f}% for {scope}: "
-                f"${current_spend:.2f} / ${self.amount:.2f}"
+        if self.weekly_limit and weekly >= self.weekly_limit:
+            violations.append(
+                f"Weekly budget exceeded: ${weekly:.2f} >= ${self.weekly_limit:.2f}"
             )
-        return None
+        if self.monthly_limit and monthly >= self.monthly_limit:
+            violations.append(
+                f"Monthly budget exceeded: ${monthly:.2f} >= ${self.monthly_limit:.2f}"
+            )
+        return violations
+
+    def check_threshold(
+        self, daily: float, weekly: float, monthly: float, threshold: float = 0.8
+    ) -> list[str]:
+        """Check if spending is approaching budget limits. Returns warnings."""
+        warnings = []
+        if self.daily_limit and daily >= self.daily_limit * threshold:
+            pct = (daily / self.daily_limit) * 100
+            warnings.append(
+                f"Daily budget at {pct:.0f}%: ${daily:.2f} / ${self.daily_limit:.2f}"
+            )
+        if self.weekly_limit and weekly >= self.weekly_limit * threshold:
+            pct = (weekly / self.weekly_limit) * 100
+            warnings.append(
+                f"Weekly budget at {pct:.0f}%: ${weekly:.2f} / ${self.weekly_limit:.2f}"
+            )
+        if self.monthly_limit and monthly >= self.monthly_limit * threshold:
+            pct = (monthly / self.monthly_limit) * 100
+            warnings.append(
+                f"Monthly budget at {pct:.0f}%: ${monthly:.2f} / ${self.monthly_limit:.2f}"
+            )
+        return warnings
 
 
 class CostTracker:
@@ -112,10 +131,10 @@ class CostTracker:
             );
 
             CREATE TABLE IF NOT EXISTS budgets (
-                name TEXT PRIMARY KEY,
-                amount REAL NOT NULL,
-                period TEXT NOT NULL,
-                project TEXT
+                project TEXT PRIMARY KEY,
+                daily_limit REAL,
+                weekly_limit REAL,
+                monthly_limit REAL
             );
 
             CREATE TABLE IF NOT EXISTS alerts (
@@ -284,58 +303,59 @@ class CostTracker:
         }
 
     def set_budget(self, budget: Budget) -> None:
-        """Set or update a budget."""
+        """Set or update a project budget."""
         conn = self._get_conn()
         conn.execute(
-            """INSERT OR REPLACE INTO budgets (name, amount, period, project)
+            """INSERT OR REPLACE INTO budgets (project, daily_limit, weekly_limit, monthly_limit)
                VALUES (?, ?, ?, ?)""",
-            (budget.name, budget.amount, budget.period, budget.project),
+            (budget.project, budget.daily_limit, budget.weekly_limit, budget.monthly_limit),
         )
         conn.commit()
 
-    def get_budget(self, name: str) -> Optional[Budget]:
-        """Get a budget by name."""
+    def get_budget(self, project: str) -> Optional[Budget]:
+        """Get the budget for a project."""
         conn = self._get_conn()
-        row = conn.execute("SELECT * FROM budgets WHERE name = ?", (name,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM budgets WHERE project = ?", (project,)
+        ).fetchone()
         if row is None:
             return None
         return Budget(
-            name=row["name"],
-            amount=row["amount"],
-            period=row["period"],
             project=row["project"],
+            daily_limit=row["daily_limit"],
+            weekly_limit=row["weekly_limit"],
+            monthly_limit=row["monthly_limit"],
         )
 
     def list_budgets(self) -> list[Budget]:
         """List all configured budgets."""
         conn = self._get_conn()
-        rows = conn.execute("SELECT * FROM budgets ORDER BY name").fetchall()
+        rows = conn.execute("SELECT * FROM budgets ORDER BY project").fetchall()
         return [
-            Budget(name=r["name"], amount=r["amount"], period=r["period"], project=r["project"])
+            Budget(
+                project=r["project"],
+                daily_limit=r["daily_limit"],
+                weekly_limit=r["weekly_limit"],
+                monthly_limit=r["monthly_limit"],
+            )
             for r in rows
         ]
 
-    def check_budgets(self) -> tuple[list[str], list[str]]:
-        """Check all budgets. Returns (violations, warnings)."""
-        violations = []
-        warnings = []
-        for budget in self.list_budgets():
-            if budget.period == "daily":
-                spend = self.get_daily_cost(budget.project)
-            elif budget.period == "weekly":
-                spend = self.get_weekly_cost(budget.project)
-            else:
-                spend = self.get_monthly_cost(budget.project)
-
-            v = budget.check_against(spend)
-            if v:
-                violations.append(v)
-            w = budget.check_threshold(spend)
-            if w:
-                warnings.append(w)
+    def check_budget(self, project: str) -> tuple[list[str], list[str]]:
+        """Check budget for a project. Returns (violations, warnings)."""
+        budget = self.get_budget(project)
+        if budget is None:
+            return [], []
+        daily = self.get_daily_cost(project)
+        weekly = self.get_weekly_cost(project)
+        monthly = self.get_monthly_cost(project)
+        violations = budget.check_against(daily, weekly, monthly)
+        warnings = budget.check_threshold(daily, weekly, monthly)
         return violations, warnings
 
-    def detect_anomaly(self, project: Optional[str] = None, multiplier: float = 2.0) -> Optional[str]:
+    def detect_anomaly(
+        self, project: Optional[str] = None, multiplier: float = 2.0
+    ) -> Optional[str]:
         """Detect cost anomalies: today's cost > multiplier * 7-day average.
 
         Returns a warning string if anomaly detected, None otherwise.
@@ -348,8 +368,6 @@ class CostTracker:
         week_ago = now - timedelta(days=7)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         weekly_cost = self.get_cost_for_period(week_ago, today_start, project)
-
-        # Average daily cost over the past 7 days (excluding today)
         avg_daily = weekly_cost / 7.0 if weekly_cost > 0 else 0
 
         if avg_daily > 0 and daily > avg_daily * multiplier:
@@ -360,7 +378,9 @@ class CostTracker:
             )
         return None
 
-    def get_recent_records(self, limit: int = 50, project: Optional[str] = None) -> list[dict]:
+    def get_recent_records(
+        self, limit: int = 50, project: Optional[str] = None
+    ) -> list[dict]:
         """Get the most recent usage records."""
         conn = self._get_conn()
         query = "SELECT * FROM usage"
