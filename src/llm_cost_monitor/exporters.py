@@ -76,8 +76,8 @@ def export_markdown(
     if summary:
         lines.append("## Summary")
         lines.append("")
-        lines.append(f"| Metric | Value |")
-        lines.append(f"|--------|-------|")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
         lines.append(f"| Total Requests | {summary.get('total_requests', 0):,} |")
         lines.append(f"| Total Cost | ${summary.get('total_cost_usd', 0):.4f} |")
         lines.append(f"| Today | ${summary.get('daily_cost', 0):.4f} |")

@@ -4,11 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from llm_cost_monitor.pricing import (
-    DEFAULT_PRICING,
-    MODEL_ALIASES,
     ModelPricing,
     PricingDatabase,
 )

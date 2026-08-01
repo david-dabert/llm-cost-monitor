@@ -197,7 +197,7 @@ class AlertManager:
                 level=AlertLevel.WARNING,
                 message=(
                     f"Spend spike detected: today ${today_cost:.2f} vs "
-                    f"7-day avg ${avg_cost:.2f} ({today_cost/avg_cost:.1f}x)"
+                    f"7-day avg ${avg_cost:.2f} ({today_cost / avg_cost:.1f}x)"
                 ),
                 project=project,
                 details={"today": today_cost, "avg_7d": avg_cost},
